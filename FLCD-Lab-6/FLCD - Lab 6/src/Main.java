@@ -1,6 +1,8 @@
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
     public static void showMenu() {
@@ -16,7 +18,7 @@ public class Main {
 
     public static void main(String[] args) {
         Grammar grammar = new Grammar();
-        grammar.readGrammarFromFile("C:/Semestrul 5/FLCD/FLCD-Lab-5 (2)/FLCD - Lab 5/src/g1.txt");
+        grammar.readGrammarFromFile("src/g2.txt");
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         boolean condition = true;
@@ -74,19 +76,47 @@ public class Main {
                         ioException.printStackTrace();
                     }
 
-                    String[] values = sequence.split(" ");
+                    String[] split = sequence.split(" ");
+                    List<String> values = new ArrayList<>();
+                    for(int i = 0; i < split.length; ++i) {
+                        if(split[i].charAt(0) != '"') {
+                            values.add(split[i]);
+                        } else {
+                            StringBuilder stringBuilder = new StringBuilder();
+                            stringBuilder.append(split[i]).append(" ");
+
+                            if(!split[i].endsWith("\"")) {
+                                i++;
+                                while(i < split.length) {
+                                    if (split[i].endsWith("\"")) {
+                                        stringBuilder.append(split[i]);
+                                        break;
+                                    } else {
+                                        stringBuilder.append(split[i]).append(" ");
+                                    }
+                                    i++;
+                                }
+                            }
+
+                            values.add(stringBuilder.toString());
+                        }
+                    }
+
+                    DescendentRecursiveParser descendentRecursiveParser = new DescendentRecursiveParser();
+
                     boolean ok = true;
                     for(String value: values) {
-                        if (!grammar.getTerminals().contains(value)) {
+                        if (!descendentRecursiveParser.isIdentifier(value) &&
+                                !descendentRecursiveParser.isConstant(value) && !grammar.getTerminals().contains(value)) {
                             ok = false;
+                            System.out.println(value);
                             break;
                         }
                     }
 
                     if(ok) {
-                        DescendentRecursiveParser descendentRecursiveParser = new DescendentRecursiveParser();
                         System.out.println();
-                        descendentRecursiveParser.descendantRecursiveParserAlgorithm(values, grammar);
+                        descendentRecursiveParser.descendantRecursiveParserAlgorithm(values.toArray(new String[0]), grammar);
                         System.out.println();
                     } else {
                         System.out.println("The sequence is not correct!\n");

@@ -1,3 +1,6 @@
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.*;
 
 public class DescendentRecursiveParser {
@@ -80,17 +83,8 @@ public class DescendentRecursiveParser {
             workingStack.push(nonTerminal + "-" + (count + 2));
             configuration.setWorkingStack(workingStack);
 
-            int sizeOfPreviousProduction = (int) Arrays.stream(grammar.getProductionForNonTerminal(nonTerminal)
-                                                                      .toArray()[count]
-                                                                      .toString()
-                                                                      .split(" "))
-                                                       .count();
             Stack<String> inputStack = configuration.getInputStack();
-            while(sizeOfPreviousProduction > 0) {
-                inputStack.pop();
-                sizeOfPreviousProduction--;
-            }
-            configuration.setInputStack(inputStack);
+            anotherTry_helper(configuration, grammar, nonTerminal, count, inputStack);
 
             String production = grammar.getProductionForNonTerminal(nonTerminal).toArray()[count + 1].toString();
 
@@ -109,24 +103,28 @@ public class DescendentRecursiveParser {
         } else {
             Stack<String> inputStack = configuration.getInputStack();
 
-            if(!grammar.getProductionForNonTerminal(nonTerminal).contains("epsilon")) {
-                int sizeOfPreviousProduction = (int) Arrays.stream(grammar.getProductionForNonTerminal(nonTerminal)
-                                .toArray()[count]
-                                .toString()
-                                .split(" "))
-                        .count();
-                while(sizeOfPreviousProduction > 0) {
-                    inputStack.pop();
-                    sizeOfPreviousProduction--;
-                }
-                configuration.setInputStack(inputStack);
-            }
+            anotherTry_helper(configuration, grammar, nonTerminal, count, inputStack);
 
             inputStack.push(nonTerminal);
             configuration.setInputStack(inputStack);
         }
 
         return configuration;
+    }
+
+    private void anotherTry_helper(Configuration configuration, Grammar grammar, String nonTerminal, int count, Stack<String> inputStack) {
+        if(!grammar.getProductionForNonTerminal(nonTerminal).toArray()[count].equals("epsilon")) {
+            int sizeOfPreviousProduction = (int) Arrays.stream(grammar.getProductionForNonTerminal(nonTerminal)
+                            .toArray()[count]
+                            .toString()
+                            .split(" "))
+                    .count();
+            while(sizeOfPreviousProduction > 0) {
+                inputStack.pop();
+                sizeOfPreviousProduction--;
+            }
+            configuration.setInputStack(inputStack);
+        }
     }
 
     public Configuration success(Configuration configuration) {
@@ -138,75 +136,120 @@ public class DescendentRecursiveParser {
 
     public void descendantRecursiveParserAlgorithm(String[] sequence, Grammar grammar) {
         List<Configuration> configurations = new ArrayList<>();
+        try {
+            Stack<String> inputStack = new Stack<>();
+            inputStack.push(grammar.getStartSymbol());
+            Configuration configuration = new Configuration(Move.EXPAND, State.NORMAL_STATE, 1, new Stack<>(), inputStack);
 
-        Stack<String> inputStack = new Stack<>();
-        inputStack.push(grammar.getStartSymbol());
-        Configuration configuration = new Configuration(Move.EXPAND, State.NORMAL_STATE, 1, new Stack<>(), inputStack);
+            constructWorkingAndInputStacks(configurations, configuration);
 
-        configurations.add(new Configuration(configuration.getMove(), configuration.getStateOfParsing(),
-                configuration.getPositionCurrentSymbol(), configuration.getWorkingStack(), configuration.getInputStack()));
+            while (!configuration.getStateOfParsing().equals(State.ERROR_STATE) &&
+                    !configuration.getStateOfParsing().equals(State.FINAL_STATE)) {
 
-        while (!configuration.getStateOfParsing().equals(State.ERROR_STATE) &&
-                !configuration.getStateOfParsing().equals(State.FINAL_STATE)) {
-
-            if (configuration.getStateOfParsing().equals(State.NORMAL_STATE)) {
-                if (configuration.getPositionCurrentSymbol() == (sequence.length + 1) && configuration.getInputStack().isEmpty()) {
-                    configuration = this.success(configuration);
-                } else {
-                    if (grammar.getNonTerminals().contains(configuration.getInputStack().peek())) {
-                        configuration = this.expand(configuration, 0, grammar);
+                if (configuration.getStateOfParsing().equals(State.NORMAL_STATE)) {
+                    if (configuration.getPositionCurrentSymbol() == (sequence.length + 1) && configuration.getInputStack().isEmpty()) {
+                        configuration = this.success(configuration);
                     } else {
-                        if ((grammar.getTerminals().contains(configuration.getInputStack().peek()) &&
-                                sequence.length >  (configuration.getPositionCurrentSymbol() - 1) &&
-                                sequence[configuration.getPositionCurrentSymbol() - 1].equals(configuration.getInputStack().peek()))
-                                || configuration.getInputStack().peek().equals("epsilon")) {
-                            configuration = this.advance(configuration);
-                        } else  {
-                            configuration = this.momentaryInsuccess(configuration);
+                        if (grammar.getNonTerminals().contains(configuration.getInputStack().peek())) {
+                            configuration = this.expand(configuration, 0, grammar);
+                        } else {
+                            if (verifyAdvance(sequence, grammar, configuration)) {
+                                configuration = this.advance(configuration);
+                            } else {
+                                configuration = this.momentaryInsuccess(configuration);
+                            }
                         }
                     }
-                }
 
-                Stack<String> wS = new Stack<>();
-                for(String e: configuration.getWorkingStack()) {
-                    wS.push(e);
+                    constructWorkingAndInputStacks(configurations, configuration);
+                } else {
+                    if (configuration.getStateOfParsing().equals(State.BACK_STATE)) {
+                        if (grammar.getTerminals().contains(configuration.getWorkingStack().peek())) {
+                            configuration = this.back(configuration);
+                        } else {
+                            configuration = this.anotherTry(configuration, grammar);
+                        }
+
+                        constructWorkingAndInputStacks(configurations, configuration);
+                    }
                 }
-                Stack<String> iS = new Stack<>();
-                for(String e: configuration.getInputStack()) {
-                    iS.push(e);
-                }
-                configurations.add(new Configuration(configuration.getMove(), configuration.getStateOfParsing(),
-                        configuration.getPositionCurrentSymbol(), wS, iS));
+            }
+
+            writeToFile("src/configurations.txt", configurations);
+
+            if (configuration.getStateOfParsing().equals(State.ERROR_STATE)) {
+                System.out.println("Error");
             } else {
-                if (configuration.getStateOfParsing().equals(State.BACK_STATE)) {
-                    if (grammar.getTerminals().contains(configuration.getWorkingStack().peek())) {
-                        configuration = this.back(configuration);
-                    } else {
-                        configuration = this.anotherTry(configuration, grammar);
-                    }
+                System.out.println("Sequence accepted");
+            }
+        } catch(Exception e) {
+            writeToFile("src/configurations.txt", configurations);
 
-                    Stack<String> wS = new Stack<>();
-                    for(String e: configuration.getWorkingStack()) {
-                        wS.push(e);
-                    }
-                    Stack<String> iS = new Stack<>();
-                    for(String e: configuration.getInputStack()) {
-                        iS.push(e);
-                    }
-                    configurations.add(new Configuration(configuration.getMove(), configuration.getStateOfParsing(),
-                            configuration.getPositionCurrentSymbol(), wS, iS));
-                }
+            e.printStackTrace();
+        }
+    }
+
+    public void writeToFile(String path, List<Configuration> configurations) {
+        BufferedWriter writer;
+
+        try {
+            writer = new BufferedWriter(new FileWriter(path));
+            writer.write(String.format("%20s \r\n", "Configuration"));
+            for(Configuration configuration: configurations) {
+                writer.write(String.format("%20s \r\n", configuration));
+            }
+            writer.close();
+        } catch(IOException exception) {
+            exception.printStackTrace();
+        }
+    }
+
+    private boolean verifyAdvance(String[] sequence, Grammar grammar, Configuration configuration) {
+        if(sequence.length > (configuration.getPositionCurrentSymbol() - 1)) {
+            if((isIdentifier(sequence[configuration.getPositionCurrentSymbol() - 1]) && configuration.getInputStack().peek().equals("identifier")) ||
+                    (isConstant(sequence[configuration.getPositionCurrentSymbol() - 1]) && configuration.getInputStack().peek().equals("constant")) ||
+                    (grammar.getTerminals().contains(configuration.getInputStack().peek()) &&
+                            sequence[configuration.getPositionCurrentSymbol() - 1].equals(configuration.getInputStack().peek()))) {
+
+                return true;
             }
         }
 
-        for(Configuration c: configurations) {
-            System.out.println(c);
+        return configuration.getInputStack().peek().equals("epsilon");
+    }
+
+    public boolean isIdentifier(String identifier) {
+        return identifier.charAt(0) == '_' && identifier.length() >= 2 && Character.isLetter(identifier.charAt(1));
+    }
+
+    public boolean isConstant(String constant) {
+        if(constant.charAt(0) == '"' || constant.charAt(0) == '\'') {
+            return true;
+        } else {
+            if(Character.isDigit(constant.charAt(0))) {
+                return true;
+            }
+
+            if(constant.charAt(0) == '-' || constant.charAt(0) == '+') {
+                return constant.length() >= 2 && Character.isDigit(constant.charAt(1));
+            }
         }
 
-        if (configuration.getStateOfParsing().equals(State.ERROR_STATE)) {
-            System.out.println("Error");
-        } else {
-            System.out.println("Sequence accepted");
+        return false;
+    }
+
+    private void constructWorkingAndInputStacks(List<Configuration> configurations, Configuration configuration) {
+        Stack<String> wS = new Stack<>();
+        for(String e: configuration.getWorkingStack()) {
+            wS.push(e);
         }
+
+        Stack<String> iS = new Stack<>();
+        for(String e: configuration.getInputStack()) {
+            iS.push(e);
+        }
+
+        configurations.add(new Configuration(configuration.getMove(), configuration.getStateOfParsing(),
+                configuration.getPositionCurrentSymbol(), wS, iS));
     }
 }
